@@ -1053,15 +1053,23 @@ button:active:not(:disabled) { transform: translateY(0); }
 // ═══════════════════════════════════════════════════
 // ── GEMINI ──────────────────────────────────────────
 // API key'ler localStorage'dan okunur (güvenli dağıtım için)
-let GEMINI_KEY = localStorage.getItem('dk_gemini_key') || '';
+// Gemini key - her çağrıda localStorage'dan taze oku
+function getGeminiKey(){ return localStorage.getItem('dk_gemini_key') || ''; }
+// Geriye dönük uyum için alias
+Object.defineProperty(window, 'GEMINI_KEY', {
+  get(){ return getGeminiKey(); },
+  set(v){ if(v) localStorage.setItem('dk_gemini_key', v); }
+});
 
 function saveSetupKeys(){
   const gk = (document.getElementById('setupGeminiKey')?.value || '').trim();
   if(!gk || gk.length < 20){ alert('Geçerli bir Gemini API key gir (AIzaSy... ile başlamalı)'); return; }
   localStorage.setItem('dk_gemini_key', gk);
-  GEMINI_KEY = gk;
   document.getElementById('setup').style.display = 'none';
   document.getElementById('home').style.display = 'flex';
+  // Kayıt doğrulama
+  const saved = localStorage.getItem('dk_gemini_key');
+  if(saved !== gk){ alert('HATA: Key kaydedilemedi! Tarayıcı ayarlarını kontrol et.'); }
 }
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
@@ -1381,8 +1389,8 @@ async function callGemini(prompt){
 
   let lastErr = null;
   for(const model of GEMINI_MODELS){
-    const gKey = GEMINI_KEY || localStorage.getItem('dk_gemini_key') || '';
-    if(!gKey){ lastErr = new Error('Gemini key eksik'); break; }
+    const gKey = getGeminiKey();
+    if(!gKey){ lastErr = new Error('key eksik'); break; }
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + gKey;
     dbg('Gemini deneniyor: ' + model, prompt.slice(0,100) + '...');
     try{
@@ -1559,7 +1567,7 @@ JSON formatı:
     dbg('Günlük sorular üretildi', st.dailyQs.map(q=>q.question));
   }catch(e){
     dbg('Günlük soru HATA', e.message);
-    toast('Bağlantı hatası, yedek sorular yükleniyor…');
+    // Hata zaten showErrorScreen ile gösterildi
     st.dailyQs = fbDaily();
   }
 
@@ -1648,9 +1656,7 @@ function showModeSelect(){
 }
 
 function goSolo(){
-  const gk2 = GEMINI_KEY || localStorage.getItem('dk_gemini_key') || '';
-  if(!gk2){ showScreen('setup'); return; }
-  GEMINI_KEY = gk2;
+  if(!getGeminiKey()){ showScreen('setup'); return; }
   st.lastMode = 'solo';
   resetSettings();
   st.selMode = 'solo';
@@ -1669,9 +1675,7 @@ function goMulti(){
 
 function goTeacherSettings(){
   // Gemini key kontrol - öğretmen soru üretecek
-  const gk = GEMINI_KEY || localStorage.getItem('dk_gemini_key') || '';
-  if(!gk){ showScreen('setup'); return; }
-  GEMINI_KEY = gk;
+  if(!getGeminiKey()){ showScreen('setup'); return; }
   const name = document.getElementById('createName').value.trim();
   if(!name){ toast('Lütfen adını gir!'); return; }
   st._teacherName = name;
@@ -2262,8 +2266,8 @@ ${JSON.stringify(questions.map(q=>({
     const sysPrompt = `You are a professional translator. Translate quiz content to ${langObj.name}. Return ONLY valid JSON array.`;
     let translatedRaw = null;
 
-    const gKey = GEMINI_KEY || localStorage.getItem('dk_gemini_key') || '';
-    if(!gKey){ throw new Error('Gemini key eksik'); }
+    const gKey = getGeminiKey();
+    if(!gKey){ throw new Error('key eksik'); }
     for(const model of GEMINI_MODELS){
       const url = 'https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+gKey;
       try{
@@ -2309,11 +2313,13 @@ ${JSON.stringify(questions.map(q=>({
 
   } catch(e){
     dbg('Çeviri HATA', e.message);
-    // Hata durumunda orijinal soruları kullan
+    // Çeviri hatası - orijinal soruları kullan (kullanıcıya bildir)
+    dbg('Çeviri hatası - orijinal dil kullanılıyor', e.message);
     st.quizQs = questions;
-    fb().update(playerRef(code, st.pName), {ready:true, readyLang:'fallback'}).catch(()=>{});
+    fb().update(playerRef(code, st.pName), {ready:true, readyLang:'original-fallback'}).catch(()=>{});
     const wt2 = document.getElementById('waitTxt');
-    if(wt2) wt2.textContent = 'Hazır! (orijinal dil)';
+    if(wt2) wt2.textContent = 'Çeviri başarısız, orijinal dil kullanılıyor…';
+    toast('HATA KODU: ÇEVİRİ — Orijinal dil kullanılıyor');
   }
 }
 
@@ -2765,9 +2771,17 @@ async function launchQuizInternal(onReady){
     dbg('Sorular üretildi', raw.questions.length + ' soru');
     await onReady(raw.questions.map(shuffQ));
   } catch(e) {
-    dbg('Soru üretim HATA', e.message);
-    toast('Soru üretilemedi, yedek sorular yükleniyor…');
-    await onReady(fbQuiz().map(shuffQ));
+    const msg = e.message || '';
+    const code = msg.includes('429') ? '429'
+                : msg.includes('503') ? '503'
+                : msg.includes('key eksik') ? 'KEY'
+                : 'EE';
+    const desc = msg.includes('429') ? 'API kotası aşıldı. Biraz bekle veya farklı key dene.'
+               : msg.includes('503') ? 'Sunucu meşgul. Biraz bekleyip tekrar dene.'
+               : msg.includes('key eksik') ? 'Gemini API key girilmemiş. ⚙️ butonuna bas.'
+               : 'Soru üretilemedi. İnternet bağlantını kontrol et.';
+    dbg('HATA KODU: ' + code, msg);
+    showErrorScreen(code, desc);
   }
 }
 
@@ -3026,6 +3040,43 @@ function manageNextQuestion(qIdx){
       }
     } catch(e){ dbg('Yönetici hata', e.message); }
   }, (st.questionTime + 1) * 1000); // questionTime + 1s buffer
+}
+
+// ── HATA EKRANI ─────────────────────────────────────
+function showErrorScreen(code, msg){
+  // Varsa overlay'leri kapat
+  ['cdOverlay','aroOverlay','confirmModal'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.remove();
+  });
+
+  const existing = document.getElementById('errorOverlay');
+  if(existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'errorOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(10,15,40,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;padding:32px;gap:16px;backdrop-filter:blur(6px);';
+  overlay.innerHTML = `
+    <div style="font-size:56px;">⚠️</div>
+    <div style="font-family:'Baloo 2',cursive;font-size:26px;font-weight:800;color:#f87171;letter-spacing:.5px;">
+      HATA KODU: ${code}
+    </div>
+    <div style="font-size:15px;color:rgba(255,255,255,.75);font-weight:600;text-align:center;max-width:320px;line-height:1.5;">
+      ${msg}
+    </div>
+    <div style="font-size:12px;color:rgba(255,255,255,.4);font-family:monospace;background:rgba(255,255,255,.06);padding:8px 16px;border-radius:8px;max-width:360px;word-break:break-all;text-align:center;" id="errDetail"></div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button onclick="document.getElementById('errorOverlay').remove();goHome();"
+        style="background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.2);color:#fff;border-radius:12px;padding:12px 24px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">
+        Ana Sayfa
+      </button>
+      <button onclick="document.getElementById('errorOverlay').remove();"
+        style="background:#ef4444;border:none;color:#fff;border-radius:12px;padding:12px 24px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">
+        Kapat
+      </button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
 }
 
 // ── COUNTDOWN ──────────────────────────────────────
@@ -3331,8 +3382,10 @@ function fbDaily(){ return [
 
 // ── BAŞLANGIÇ KONTROLÜ ──────────────────────────────
 (function(){
-  // Gemini key yoksa setup ekranını göster, home'u gizle
-  if(!GEMINI_KEY){
+  const key = getGeminiKey();
+  // Debug: key durumunu logla
+  console.log('[DK] GEMINI_KEY:', key ? 'VAR (' + key.slice(0,8) + '...)' : 'YOK');
+  if(!key){
     const setupEl = document.getElementById('setup');
     const homeEl  = document.getElementById('home');
     if(setupEl) setupEl.style.display = 'block';
@@ -3340,15 +3393,6 @@ function fbDaily(){ return [
   }
 })();
 
-function fbQuiz(){ return [
-  {question:"Bu tarihi kule hangi ülkededir?",           imageSearch:"Eiffel Tower",     choices:["Fransa","İtalya","İspanya","Almanya"],               correct:0, info:"Eyfel Kulesi Paris, Fransa'dadır."},
-  {question:"Bu antik arena hangi imparatorluğa aittir?",imageSearch:"Colosseum",        choices:["Roma İmparatorluğu","Yunan","Mısır","Pers"],          correct:0, info:"Kolezyum MS 80'de Roma'da tamamlandı."},
-  {question:"Dev pandaların anavatanı hangi ülkedir?",   imageSearch:"Giant panda",      choices:["Çin","Japonya","Hindistan","Tayland"],               correct:0, info:"Dev pandalar yalnızca Çin'in bambu ormanlarında yaşar."},
-  {question:"Bu ünlü tablonun sanatçısı kimdir?",        imageSearch:"Mona Lisa",        choices:["Leonardo da Vinci","Michelangelo","Raphael","Botticelli"], correct:0, info:"Mona Lisa, Leonardo da Vinci'nin eseridir."},
-  {question:"Bu anıt mezar hangi ülkededir?",            imageSearch:"Taj Mahal",        choices:["Hindistan","Pakistan","İran","Afganistan"],           correct:0, info:"Tac Mahal, Hindistan'ın Agra şehrindedir."},
-  {question:"Bu devasa duvar hangi ülkede uzanır?",      imageSearch:"Great Wall China", choices:["Çin","Japonya","Moğolistan","Kore"],                 correct:0, info:"Çin Seddi, Çin'in kuzeyini boydan boya geçer."},
-  {question:"Bu şelale hangi iki ülke arasındadır?",     imageSearch:"Niagara Falls",    choices:["ABD ve Kanada","ABD ve Meksika","Brezilya ve Arjantin","İsviçre ve Fransa"], correct:0, info:"Niagara Şelalesi ABD ile Kanada sınırındadır."},
-];}
 </script>
 </body>
 </html>
