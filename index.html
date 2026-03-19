@@ -1053,7 +1053,16 @@ button:active:not(:disabled) { transform: translateY(0); }
 // ═══════════════════════════════════════════════════
 // ── GEMINI ──────────────────────────────────────────
 // API key'ler localStorage'dan okunur (güvenli dağıtım için)
-let GEMINI_KEY = '';
+let GEMINI_KEY = localStorage.getItem('dk_gemini_key') || '';
+
+function saveSetupKeys(){
+  const gk = (document.getElementById('setupGeminiKey')?.value || '').trim();
+  if(!gk || gk.length < 20){ alert('Geçerli bir Gemini API key gir (AIzaSy... ile başlamalı)'); return; }
+  localStorage.setItem('dk_gemini_key', gk);
+  GEMINI_KEY = gk;
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('home').style.display = 'flex';
+}
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',  // 2.5 kotası aşılırsa
@@ -2253,8 +2262,10 @@ ${JSON.stringify(questions.map(q=>({
     const sysPrompt = `You are a professional translator. Translate quiz content to ${langObj.name}. Return ONLY valid JSON array.`;
     let translatedRaw = null;
 
+    const gKey = GEMINI_KEY || localStorage.getItem('dk_gemini_key') || '';
+    if(!gKey){ throw new Error('Gemini key eksik'); }
     for(const model of GEMINI_MODELS){
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+GEMINI_KEY;
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+gKey;
       try{
         const r = await fetch(url,{
           method:'POST',
@@ -3317,6 +3328,17 @@ function fbDaily(){ return [
    answer:"abd", aliases:["abd","ABD","usa","USA","Amerika","united states"],
    hint:"Kuzey Amerika'nın en büyük ülkesi.", fact:"Büyük Kanyon, ABD'nin Arizona eyaletinde Colorado Nehri'nin milyonlarca yıl boyunca kayanı oymasıyla oluştu."},
 ];}
+
+// ── BAŞLANGIÇ KONTROLÜ ──────────────────────────────
+(function(){
+  // Gemini key yoksa setup ekranını göster, home'u gizle
+  if(!GEMINI_KEY){
+    const setupEl = document.getElementById('setup');
+    const homeEl  = document.getElementById('home');
+    if(setupEl) setupEl.style.display = 'block';
+    if(homeEl)  homeEl.style.display  = 'none';
+  }
+})();
 
 function fbQuiz(){ return [
   {question:"Bu tarihi kule hangi ülkededir?",           imageSearch:"Eiffel Tower",     choices:["Fransa","İtalya","İspanya","Almanya"],               correct:0, info:"Eyfel Kulesi Paris, Fransa'dadır."},
