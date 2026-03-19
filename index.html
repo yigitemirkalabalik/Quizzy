@@ -2908,7 +2908,7 @@ function reveal(sel){
     const aMap = {};
     if(sel >= 0) aMap[sel] = 1;
     setTimeout(()=>{
-      showAnswerResult(q, aMap, ()=>{
+      showAnswerResult(q, aMap, sel >= 0 ? sel : -1, ()=>{
         st.cq++;
         if(st.cq >= st.total) finishGame(); else loadQuizQ();
       });
