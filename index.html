@@ -1391,6 +1391,7 @@ async function callGemini(prompt){
   for(const model of GEMINI_MODELS){
     const gKey = getGeminiKey();
     if(!gKey){ lastErr = new Error('key eksik'); break; }
+    if(model === GEMINI_MODELS[0]) console.log('[DK] callGemini key:', gKey.slice(0,12)+'...');
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + gKey;
     dbg('Gemini deneniyor: ' + model, prompt.slice(0,100) + '...');
     try{
