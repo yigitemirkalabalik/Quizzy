@@ -674,7 +674,8 @@ button:active:not(:disabled) { transform: translateY(0); }
   <div style="padding:40px 24px;display:flex;flex-direction:column;align-items:center;gap:20px;min-height:100vh;background:linear-gradient(160deg,#1e3a8a,#1e40af,#1d4ed8);">
     <div style="font-family:'Baloo 2',cursive;font-size:28px;font-weight:800;color:#fff;text-align:center;margin-top:20px;">⚙️ İlk Kurulum</div>
     <div style="font-size:14px;color:rgba(255,255,255,.75);text-align:center;line-height:1.5;max-width:320px;">
-      API key'leri gir. Bunlar sadece bu cihazda saklanır, hiçbir yere gönderilmez.
+      Öğretmen olarak soru üretmek için Gemini API key'i gerekli.<br/>
+      <span style="font-size:12px;opacity:.7;">Öğrenciler key girmeden katılabilir.</span>
     </div>
     <div style="width:100%;max-width:380px;display:flex;flex-direction:column;gap:14px;">
       <div style="background:rgba(255,255,255,.1);border-radius:16px;padding:18px;">
@@ -686,13 +687,7 @@ button:active:not(:disabled) { transform: translateY(0); }
           <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#93c5fd;">aistudio.google.com</a>'dan ücretsiz alabilirsin
         </div>
       </div>
-      <div style="background:rgba(255,255,255,.1);border-radius:16px;padding:18px;">
-        <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Firebase API Key</div>
-        <input id="setupFbKey" type="password" placeholder="AIzaSy..."
-          style="width:100%;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.25);border-radius:10px;padding:11px 14px;color:#fff;font-size:14px;font-family:'Nunito',sans-serif;font-weight:600;outline:none;box-sizing:border-box;"
-          oninput="this.style.borderColor=this.value.length>10?'#34d399':'rgba(255,255,255,.25)'"/>
-        <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:6px;">Firebase Console → Project Settings'ten alabilirsin</div>
-      </div>
+
       <button onclick="saveSetupKeys()"
         style="background:linear-gradient(135deg,#34d399,#059669);color:#fff;border:none;border-radius:14px;padding:15px;font-family:'Nunito',sans-serif;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(5,150,105,.4);">
         Kaydet ve Başla →
@@ -1059,7 +1054,6 @@ button:active:not(:disabled) { transform: translateY(0); }
 // ── GEMINI ──────────────────────────────────────────
 // API key'ler localStorage'dan okunur (güvenli dağıtım için)
 let GEMINI_KEY = '';
-let _FB_API_KEY = '';
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',  // 2.5 kotası aşılırsa
@@ -1068,7 +1062,8 @@ const GEMINI_MODELS = [
 ];
 
 // ── FIREBASE ────────────────────────────────────────
-const FB_CONFIG_BASE = {
+const FB_CONFIG = {
+  apiKey:            'AIzaSyCkiNyyqx1KcKA3Mh7TMpIHKUVARblt3R4',
   authDomain:        'quizzy-ad761.firebaseapp.com',
   databaseURL:       'https://quizzy-ad761-default-rtdb.europe-west1.firebasedatabase.app',
   projectId:         'quizzy-ad761',
@@ -1076,7 +1071,6 @@ const FB_CONFIG_BASE = {
   messagingSenderId: '752370088697',
   appId:             '1:752370088697:web:c3bf4f6413a19bce4f25e0',
 };
-let FB_CONFIG = {...FB_CONFIG_BASE};
 let fbApp=null, fbDB=null;
 async function initFirebase(){
   if(fbDB){ dbg('Firebase zaten init',''); return fbDB; }
@@ -1645,6 +1639,9 @@ function showModeSelect(){
 }
 
 function goSolo(){
+  const gk2 = GEMINI_KEY || localStorage.getItem('dk_gemini_key') || '';
+  if(!gk2){ showScreen('setup'); return; }
+  GEMINI_KEY = gk2;
   st.lastMode = 'solo';
   resetSettings();
   st.selMode = 'solo';
@@ -1662,6 +1659,10 @@ function goMulti(){
 }
 
 function goTeacherSettings(){
+  // Gemini key kontrol - öğretmen soru üretecek
+  const gk = GEMINI_KEY || localStorage.getItem('dk_gemini_key') || '';
+  if(!gk){ showScreen('setup'); return; }
+  GEMINI_KEY = gk;
   const name = document.getElementById('createName').value.trim();
   if(!name){ toast('Lütfen adını gir!'); return; }
   st._teacherName = name;
